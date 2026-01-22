@@ -40,30 +40,31 @@
 
 #include <stdexcept>
 
-namespace yas {
+namespace yas
+{
 
-/***************************************************************************/
+    /***************************************************************************/
 
-#define __YAS_DECLARE_EXCEPTION_TYPE(type) \
-    struct type: std::exception { \
-        type(const char *msg) noexcept \
-            :msg(msg) \
-        {} \
-        virtual ~type() noexcept {} \
-        \
-        virtual const char* what() const noexcept { return msg; } \
-        \
-    private: \
-        const char *msg; \
+#define __YAS_DECLARE_EXCEPTION_TYPE(type)                                                                             \
+    struct type : std::exception                                                                                       \
+    {                                                                                                                  \
+        type(const char* msg) noexcept                                                                                 \
+            : msg(msg)                                                                                                 \
+        {                                                                                                              \
+        }                                                                                                              \
+        virtual ~type() noexcept { }                                                                                   \
+                                                                                                                       \
+        virtual const char* what() const noexcept override { return msg; }                                             \
+                                                                                                                       \
+    private:                                                                                                           \
+        const char* msg;                                                                                               \
     };
 
-#define __YAS_EXCEPTION_MAKE_MSG(msg) \
-    __FILE__ "(" YAS_PP_STRINGIZE(__LINE__) "): " msg
+#define __YAS_EXCEPTION_MAKE_MSG(msg) __FILE__ "(" YAS_PP_STRINGIZE(__LINE__) "): " msg
 
-#define __YAS_THROW_EXCEPTION(type, msg) \
-    throw type(__YAS_EXCEPTION_MAKE_MSG(msg))
+#define __YAS_THROW_EXCEPTION(type, msg) throw type(__YAS_EXCEPTION_MAKE_MSG(msg))
 
-/***************************************************************************/
+    /***************************************************************************/
 
 } // ns yas
 
