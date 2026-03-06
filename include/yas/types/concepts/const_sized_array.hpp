@@ -44,7 +44,7 @@ namespace const_sized_array {
 /***************************************************************************/
 
 template<std::size_t N, std::size_t F, typename Archive, typename T>
-Archive& save_chars(Archive &ar, const T *beg, const T *, __YAS_ENABLE_IF_IS_ANY_OF(T, char, signed char)) {
+Archive& save_chars(Archive &ar, const T *beg, const T *, __YAS_ENABLE_IF_IS_ANY_OF(T, char)) {
     ar.write("\"", 1);
     ar.write(beg, N-1);
     ar.write("\"", 1);
@@ -53,7 +53,7 @@ Archive& save_chars(Archive &ar, const T *beg, const T *, __YAS_ENABLE_IF_IS_ANY
 }
 
 template<std::size_t N, std::size_t F, typename Archive, typename T>
-Archive& save_chars(Archive &ar, const T *beg, const T *end, __YAS_DISABLE_IF_IS_ANY_OF(T, char, signed char)) {
+Archive& save_chars(Archive &ar, const T *beg, const T *end, __YAS_DISABLE_IF_IS_ANY_OF(T, char)) {
     ar.write("[", 1);
 
     ar & (*beg);
@@ -88,7 +88,7 @@ Archive& save(Archive &ar, const T *beg, const T *end) {
 /***************************************************************************/
 
 template<std::size_t N, std::size_t F, typename Archive, typename T>
-Archive& load_chars(Archive &ar, T *beg, T *, __YAS_ENABLE_IF_IS_ANY_OF(T, char, signed char)) {
+Archive& load_chars(Archive &ar, T *beg, T *, __YAS_ENABLE_IF_IS_ANY_OF(T, char)) {
     __YAS_THROW_IF_BAD_JSON_CHARS(ar, "\"");
 
     ar.read(beg, N-1);
@@ -100,7 +100,7 @@ Archive& load_chars(Archive &ar, T *beg, T *, __YAS_ENABLE_IF_IS_ANY_OF(T, char,
 }
 
 template<std::size_t N, std::size_t F, typename Archive, typename T>
-Archive& load_chars(Archive &ar, T *beg, T *end, __YAS_DISABLE_IF_IS_ANY_OF(T, char, signed char)) {
+Archive& load_chars(Archive &ar, T *beg, T *end, __YAS_DISABLE_IF_IS_ANY_OF(T, char)) {
     __YAS_CONSTEXPR_IF ( !(F & yas::compacted) ) {
         json_skipws(ar);
     }

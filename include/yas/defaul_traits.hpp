@@ -163,10 +163,12 @@ template<typename T>
 std::size_t default_traits::itoa(char *buf, const std::size_t, T v) {
 	if ( v < 0 ) {
         *buf++ = '-';
-        return 1 + default_traits::utoa(buf, 0/*unused*/, __YAS_SCAST(std::int64_t, std::abs(v)));
+        // Use unsigned two's-complement negation to avoid UB from std::abs(INT_MIN)
+        return 1 + default_traits::utoa(buf, 0/*unused*/,
+            static_cast<std::uint64_t>(0) - static_cast<std::uint64_t>(v));
     }
 
-    return default_traits::utoa(buf, 0/*unused*/, __YAS_SCAST(std::int64_t, v));
+    return default_traits::utoa(buf, 0/*unused*/, __YAS_SCAST(std::uint64_t, v));
 }
 
 /***************************************************************************/
@@ -212,14 +214,17 @@ T default_traits::atod(const char *str, std::size_t size) {
     };
 
 	((void)size);
-	T v = 0.0;
+	// Accumulate entirely in double to preserve precision for all digit strings,
+	// including the 17-digit strings produced by rapidjson_dtoa for float values.
+	// The final static_cast<T> rounds correctly to float or double as needed.
+	double acc = 0.0;
 	bool neg = false;
 	if ( *str == '-' ) {
 		neg = true;
 		++str;
 	}
 	for ( ; *str >= '0' && *str <= '9'; ++str) {
-		v = __YAS_SCAST(T, (v*10.0) + (*str - '0'));
+		acc = acc * 10.0 + (*str - '0');
 	}
 	if ( *str == '.' ) {
 		double f = 0.0;
@@ -228,12 +233,25 @@ T default_traits::atod(const char *str, std::size_t size) {
 		for ( ; *str >= '0' && *str <= '9'; ++str, ++n) {
 			f = (f*10.0) + (*str - '0');
 		}
-		v += __YAS_SCAST(T, f/es[n]);
+		acc += f / es[n];
 	}
 
-	v = neg ? -v : v;
+	if ( *str == 'e' || *str == 'E' ) {
+		++str;
+		bool exp_neg = false;
+		if ( *str == '-' ) { exp_neg = true; ++str; }
+		else if ( *str == '+' ) { ++str; }
+		int exp = 0;
+		for ( ; *str >= '0' && *str <= '9'; ++str ) {
+			exp = exp * 10 + (*str - '0');
+		}
+		if ( exp_neg )
+			acc /= es[exp];
+		else
+			acc *= es[exp];
+	}
 
-	return v;
+	return static_cast<T>(neg ? -acc : acc);
 }
 
 /***************************************************************************/
