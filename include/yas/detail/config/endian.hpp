@@ -38,7 +38,7 @@
 
 /***************************************************************************/
 
-#ifdef _IN_ENCLAVE
+#ifdef FOR_SGX
 #   define __YAS_LITTLE_ENDIAN (1)
 #   define __YAS_BIG_ENDIAN (0)
 #elif defined(__linux__) || defined(__ANDROID__) || defined(__EMSCRIPTEN__)

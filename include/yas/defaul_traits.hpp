@@ -38,7 +38,7 @@
 
 #include <yas/detail/config/config.hpp>
 #include <yas/detail/tools/cast.hpp>
-#if !defined(_MSC_VER) || !defined(_IN_ENCLAVE)
+#if !defined(_MSC_VER) || !defined(FOR_SGX)
 #include <yas/detail/tools/rapidjson_dtoa.hpp>
 #endif
 
