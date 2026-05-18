@@ -41,9 +41,7 @@
 #include <yas/types/std/pair.hpp>
 #include <yas/types/std/bitset.hpp>
 //#include <yas/types/std/chrono.hpp>
-#if !defined(_MSC_VER) || !defined(FOR_SGX)
-// #include <yas/types/std/optional.hpp>
-#endif
+#include <yas/types/std/optional.hpp>
 //#include <yas/types/std/complex.hpp>
 #include <yas/types/std/string.hpp>
 #if !defined(_MSC_VER) || !defined(FOR_SGX)
