@@ -44,6 +44,9 @@
 
 #include <yas/object.hpp>
 
+#include <array>
+#include <type_traits>
+
 namespace yas {
 namespace detail {
 
@@ -59,13 +62,25 @@ struct serializer<
     template<typename Archive>
     static Archive& save(Archive &ar, const object<KVI, Pairs...> &o) {
         __YAS_CONSTEXPR_IF ( F & yas::json ) {
+            /*
+             * Canopy fork extension.
+             *
+             * JSON object output is name based, not positional.  Use the
+             * JSON-specific pair walker so optional-like members can suppress
+             * their whole "key": value pair when they have no value.  This is
+             * what lets an unset rpc::optional<T> become an omitted JSON
+             * property, matching JSON Schema's "not in required" semantics.
+             *
+             * The non-JSON path below deliberately keeps the original YAS
+             * positional traversal.  For rpc::optional<T>, the value serializer
+             * writes a compact presence flag there.
+             */
             ar.write("{", 1);
-        }
-
-        apply(ar, o.pairs);
-
-        __YAS_CONSTEXPR_IF ( F & yas::json ) {
+            bool first = true;
+            apply_json_save(ar, o.pairs, first);
             ar.write("}", 1);
+        } else {
+            apply(ar, o.pairs);
         }
 
         return ar;
@@ -79,7 +94,25 @@ struct serializer<
             }
             __YAS_THROW_IF_BAD_JSON_CHARS(ar, "{");
 
-            apply(ar, o.map, o.pairs);
+            __YAS_CONSTEXPR_IF ( F & yas::compacted ) {
+                /*
+                 * Compacted JSON is still treated as a positional YAS format.
+                 * It is intentionally not relaxed here because no member names
+                 * are available to distinguish "missing optional" from "next
+                 * positional field".
+                 */
+                apply(ar, o.map, o.pairs);
+            } else {
+                /*
+                 * Canopy fork extension.
+                 *
+                 * Normal JSON object input is member-name based.  Load it with
+                 * the JSON-specific walker so fields may arrive in any order,
+                 * unknown fields can be skipped, optional fields may be absent,
+                 * and non-optional fields are still enforced.
+                 */
+                apply_json_load(ar, o.map, o.pairs);
+            }
 
             __YAS_CONSTEXPR_IF ( !(F & yas::compacted) ) {
                 json_skipws(ar);
@@ -108,6 +141,156 @@ private:
         }
 
         return apply<I+1>(ar, t);
+    }
+
+    template<typename Pair>
+    static bool json_pair_has_value(const Pair &pair) {
+        /*
+         * A field is emitted when either:
+         *   - its value type has no optional-field trait, or
+         *   - the trait says this particular value is present.
+         *
+         * The serializer is checking the pair value, not the pair itself,
+         * because the containing YAS object owns the key but Canopy optional
+         * semantics live in the value type.
+         */
+        using value_type = typename std::remove_cv<typename std::remove_reference<decltype(pair.val)>::type>::type;
+        return !json_optional_field_traits<value_type>::optional || json_optional_field_traits<value_type>::has_value(pair.val);
+    }
+
+    template<typename Pair>
+    static bool json_pair_is_required(const Pair &) {
+        /*
+         * JSON Schema treats a property as optional when it is absent from the
+         * parent object's "required" array.  This mirrors that rule for YAS
+         * JSON input: all ordinary fields are required; only types that opt in
+         * through json_optional_field_traits may be missing.
+         */
+        using value_type = typename std::remove_cv<typename std::remove_reference<typename Pair::value_type>::type>::type;
+        return !json_optional_field_traits<value_type>::optional;
+    }
+
+    template<typename Pair>
+    static void reset_json_optional_pair(Pair &pair) {
+        /*
+         * Before loading a named JSON object, clear optional-like destinations.
+         * If the JSON member is absent, the destination remains empty.  If the
+         * member is present, normal value deserialisation below assigns it.
+         */
+        using value_type = typename std::remove_cv<typename std::remove_reference<decltype(pair.val)>::type>::type;
+        if constexpr (json_optional_field_traits<value_type>::optional) {
+            json_optional_field_traits<value_type>::reset(pair.val);
+        }
+    }
+
+    template<std::size_t I = 0, typename Archive, typename... Tp>
+    static typename std::enable_if<I == sizeof...(Tp), Archive &>::type
+    apply_json_save(Archive &ar, const std::tuple<Tp...> &, bool &) { return ar; }
+
+    template<std::size_t I = 0, typename Archive, typename... Tp>
+    static typename std::enable_if<I < sizeof...(Tp), Archive &>::type
+    apply_json_save(Archive &ar, const std::tuple<Tp...> &t, bool &first) {
+        const auto &pair = std::get<I>(t);
+        if ( json_pair_has_value(pair) ) {
+            /*
+             * Write commas only between emitted members.  This matters because
+             * skipped optional fields may be anywhere in the generated object
+             * tuple, including the first or last position.
+             */
+            if ( !first ) {
+                ar.write(",", 1);
+            }
+            first = false;
+            ar & pair;
+        }
+
+        return apply_json_save<I+1>(ar, t, first);
+    }
+
+    template<std::size_t I = 0, typename... Tp>
+    static typename std::enable_if<I == sizeof...(Tp), void>::type
+    reset_json_optional_pairs(std::tuple<Tp...> &) {}
+
+    template<std::size_t I = 0, typename... Tp>
+    static typename std::enable_if<I < sizeof...(Tp), void>::type
+    reset_json_optional_pairs(std::tuple<Tp...> &t) {
+        reset_json_optional_pair(std::get<I>(t));
+        reset_json_optional_pairs<I+1>(t);
+    }
+
+    template<std::size_t I = 0, typename... Tp>
+    static typename std::enable_if<I == sizeof...(Tp), void>::type
+    validate_required_json_pairs(const std::array<bool, sizeof...(Tp)> &, const std::tuple<Tp...> &) {}
+
+    template<std::size_t I = 0, typename... Tp>
+    static typename std::enable_if<I < sizeof...(Tp), void>::type
+    validate_required_json_pairs(const std::array<bool, sizeof...(Tp)> &seen, const std::tuple<Tp...> &t) {
+        if ( json_pair_is_required(std::get<I>(t)) && !seen[I] ) {
+            /*
+             * Preserve strictness for non-optional fields.  This is the
+             * counterpart to allowing rpc::optional<T> to be omitted: missing
+             * required generated members still produce a YAS JSON error.
+             */
+            __YAS_THROW_NO_EXPECTED_JSON_KEY("no expected JSON key");
+        }
+        validate_required_json_pairs<I+1>(seen, t);
+    }
+
+    template<typename Archive, typename M, typename... Tp>
+    static Archive& apply_json_load(Archive &ar, const M &m, std::tuple<Tp...> &t) {
+        /*
+         * Canopy fork extension.
+         *
+         * Upstream YAS object loading expects each generated member to appear
+         * as the recursive walker advances.  That is too strict for external
+         * JSON configuration because JSON objects are naturally keyed maps:
+         * order is not significant, unknown fields are common during schema
+         * evolution, and optional fields may be omitted.
+         *
+         * This loop reads members until the closing brace, dispatches known
+         * keys through the compile-time key map, skips unknown values, and then
+         * checks that all required fields were present.  Optional destinations
+         * are reset before the loop so absence is represented as "no value".
+         */
+        reset_json_optional_pairs(t);
+        std::array<bool, sizeof...(Tp)> seen{};
+
+        while ( true ) {
+            json_skipws(ar);
+            const char ch = ar.peekch();
+            if ( ch == '}' ) {
+                break;
+            }
+
+            char key[1024];
+            json_read_key(ar, key, sizeof(key));
+            json_skipws(ar);
+
+            const std::uint32_t hash = fnv1a(key);
+            const auto it = m.find(hash);
+            if ( it.key ) {
+                tuple_switch(ar, it.val, t);
+                if ( it.val < seen.size() ) {
+                    seen[it.val] = true;
+                }
+            } else {
+                json_skip_val(ar);
+            }
+
+            json_skipws(ar);
+            const char next = ar.peekch();
+            if ( next == ',' ) {
+                ar.getch();
+                continue;
+            }
+            if ( next == '}' ) {
+                break;
+            }
+            __YAS_THROW_IF_BAD_JSON_CHARS(ar, ",");
+        }
+
+        validate_required_json_pairs(seen, t);
+        return ar;
     }
 
     // load

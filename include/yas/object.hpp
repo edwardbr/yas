@@ -42,6 +42,7 @@
 #include <yas/detail/tools/ctsort.hpp>
 #include <yas/detail/tools/ctmap.hpp>
 
+#include <type_traits>
 #include <cstring>
 
 namespace yas {
@@ -139,6 +140,42 @@ constexpr object<KVI, Pairs...>
 make_object(std::nullptr_t, Pairs &&... pairs) {
     return {nullptr, 0, std::forward<Pairs>(pairs)...};
 }
+
+namespace detail
+{
+/*
+ * Canopy fork extension.
+ *
+ * YAS serialises objects by walking a tuple of named "key/value" pairs.  The
+ * value serializer can decide how to serialise its value, but it normally does
+ * not get to decide whether the containing JSON object should emit the member
+ * name at all.  Canopy needs that extra level of control for IDL optionals:
+ *
+ *   struct server_options { rpc::optional<tls_options> tls; };
+ *
+ * For JSON configuration and JSON-schema compatibility, an unset optional
+ * field should normally be absent from the object rather than emitted as
+ * "tls": null.  A missing optional property is the natural JSON Schema mapping
+ * for a non-required field.
+ *
+ * This trait is the opt-in hook used by the JSON object serializer in
+ * yas/types/utility/object.hpp.  The default keeps upstream YAS behaviour:
+ * every field is required, every field is emitted, and reset is a no-op.
+ * Canopy specialisations, for example rpc::optional<T>, mark a type optional,
+ * report whether it has a value, and reset it before object-member loading so
+ * a missing JSON property leaves the destination optional empty.
+ *
+ * This only affects named JSON object fields.  Binary and compacted formats
+ * remain positional and are handled by the value serializer itself.
+ */
+template<typename T> struct json_optional_field_traits
+{
+    static constexpr bool optional = false;
+
+    static bool has_value(const T&) noexcept { return true; }
+    static void reset(T&) noexcept { }
+};
+} // namespace detail
 
 /**************************************************************************/
 
