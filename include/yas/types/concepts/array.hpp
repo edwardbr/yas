@@ -45,6 +45,18 @@ namespace array {
 
 /***************************************************************************/
 
+template<typename Archive, typename C, typename T>
+void save_array_value(Archive &ar, const T &value) {
+    __YAS_CONSTEXPR_IF ( std::is_same<typename C::value_type, bool>::value ) {
+        const bool copied = value;
+        ar & copied;
+    } else {
+        ar & value;
+    }
+}
+
+/***************************************************************************/
+
 template<typename Archive, typename C>
 void save_array(Archive &ar, const C &c, std::true_type) {
     ar.write(&c[0], sizeof(typename C::value_type) * c.size());
@@ -53,7 +65,7 @@ void save_array(Archive &ar, const C &c, std::true_type) {
 template<typename Archive, typename C>
 void save_array(Archive &ar, const C &c, std::false_type) {
     for ( const auto &it: c ) {
-        ar & it;
+        save_array_value<Archive, C>(ar, it);
     }
 }
 
@@ -64,10 +76,10 @@ Archive& save(Archive &ar, const C &c) {
 
         if ( !c.empty() ) {
             auto it = c.begin();
-            ar & (*it);
+            save_array_value<Archive, C>(ar, *it);
             for ( ++it; it != c.end(); ++it ) {
                 ar.write(",", 1);
-                ar & (*it);
+                save_array_value<Archive, C>(ar, *it);
             }
         }
 
