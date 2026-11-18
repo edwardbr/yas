@@ -100,7 +100,7 @@ struct text_ostream {
     template<typename T>
     void write(const T &v, __YAS_ENABLE_IF_IS_ANY_OF(T, std::uint16_t, std::uint32_t, std::uint64_t)) {
         char buf[sizeof(v) * 4];
-        std::size_t len = Trait::utoa(buf + 1, sizeof(buf), v);
+        std::size_t len = Trait::utoa(buf + 1, sizeof(buf) - 1, v);
 
         buf[0] = __YAS_SCAST(char, '0' + len);
 

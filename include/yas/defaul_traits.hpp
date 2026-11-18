@@ -38,6 +38,7 @@
 
 #include <yas/detail/config/config.hpp>
 #include <yas/detail/tools/cast.hpp>
+#include <yas/detail/io/io_exceptions.hpp>
 #if !defined(_MSC_VER) || !defined(FOR_SGX)
 #include <yas/detail/tools/rapidjson_dtoa.hpp>
 #endif
@@ -120,7 +121,7 @@ T default_traits::atoi(const char *str, std::size_t size) {
 /***************************************************************************/
 
 template<typename T>
-std::size_t default_traits::utoa(char *buf, const std::size_t, T v) {
+std::size_t default_traits::utoa(char *buf, const std::size_t bufsize, T v) {
 	std::uint64_t l = __YAS_SCAST(std::uint64_t, v), n = l;
 
 	std::size_t len = 1;
@@ -130,6 +131,8 @@ std::size_t default_traits::utoa(char *buf, const std::size_t, T v) {
 	if ( l >= 100ull ) { len += 2; l /= 100ull; }
 	if ( l >= 10ull ) { len += 1; }
 
+	// Include the terminator in the required capacity, before any write.
+	__YAS_THROW_WRITE_ERROR(!buf || len >= bufsize);
 	*(buf+len) = 0;
 	char *p = buf+len-1;
 	switch ( len ) {
@@ -152,7 +155,7 @@ std::size_t default_traits::utoa(char *buf, const std::size_t, T v) {
         case 4 : *p-- = __YAS_SCAST(char, '0'+(n % 10)); n /= 10; __YAS_FALLTHROUGH;
         case 3 : *p-- = __YAS_SCAST(char, '0'+(n % 10)); n /= 10; __YAS_FALLTHROUGH;
         case 2 : *p-- = __YAS_SCAST(char, '0'+(n % 10)); n /= 10; __YAS_FALLTHROUGH;
-        case 1 : *p-- = __YAS_SCAST(char, '0'+(n % 10)); n /= 10;
+        case 1 : *p = __YAS_SCAST(char, '0'+(n % 10)); n /= 10;
         default: break;
 	}
 
@@ -160,15 +163,17 @@ std::size_t default_traits::utoa(char *buf, const std::size_t, T v) {
 }
 
 template<typename T>
-std::size_t default_traits::itoa(char *buf, const std::size_t, T v) {
+std::size_t default_traits::itoa(char *buf, const std::size_t bufsize, T v) {
 	if ( v < 0 ) {
-        *buf++ = '-';
+        __YAS_THROW_WRITE_ERROR(!buf || bufsize < 3);
         // Use unsigned two's-complement negation to avoid UB from std::abs(INT_MIN)
-        return 1 + default_traits::utoa(buf, 0/*unused*/,
+        const auto len = default_traits::utoa(buf + 1, bufsize - 1,
             static_cast<std::uint64_t>(0) - static_cast<std::uint64_t>(v));
+        *buf = '-';
+        return 1 + len;
     }
 
-    return default_traits::utoa(buf, 0/*unused*/, __YAS_SCAST(std::uint64_t, v));
+    return default_traits::utoa(buf, bufsize, __YAS_SCAST(std::uint64_t, v));
 }
 
 /***************************************************************************/

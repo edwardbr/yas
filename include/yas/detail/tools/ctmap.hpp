@@ -71,7 +71,10 @@ struct ctmap<std::tuple<KVI...>> {
             }
         }
 
-        return {(beg != end && beg->key == k), beg->val};
+        if ( beg == end || beg->key != k ) {
+            return {false, 0};
+        }
+        return {true, beg->val};
     }
 
     static constexpr pair<std::uint32_t, std::uint8_t> kvis[] = {
